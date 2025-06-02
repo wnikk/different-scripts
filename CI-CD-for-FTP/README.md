@@ -31,3 +31,32 @@ variables:
   FTP_HOST: "$CI_FTP_HOST"
   FTP_USERNAME: "$CI_FTP_USERNAME"
   FTP_PASSWORD: "$CI_FTP_PASSWORD"
+
+**Important:** Do not store passwords directly in `.gitlab-ci.yml`, use GitLab’s CI/CD secret variables like `$CI_FTP_PASSWORD`.
+
+## 🏗 Setup & Usage
+### 1️⃣ **Add `.gitlab-ci.yml` to your repository root**  
+Place the `gitlab-ci.yml` file in your project's repository.
+
+### 2️⃣ **Configure GitLab CI/CD variables**  
+Go to **Settings > CI/CD > Variables**, then add:
+- `CI_FTP_HOST`
+- `CI_FTP_USERNAME`
+- `CI_FTP_PASSWORD`
+
+### 3️⃣ **Trigger the pipeline in GitLab**  
+Whenever you push a commit to `main`, the pipeline will **automatically** execute build and deployment.
+
+## 🔄 Rollback to a Previous Version
+If the new version fails, restore the previous version.
+This reverts the deployment to the last working backup stored in version_last.
+
+## 📖 How It Works
+1. **Build phase** prepares files in `dist/`.  
+2. **Test phase** validates PHP syntax before deployment.  
+3. **Production deployment** updates files **via FTP**.  
+4. **Backup creation** saves the previous version in `version_lastYYYYMMDD_HHMM`.  
+5. **Rollback mechanism** restores the last working version.  
+
+📌 This repository serves as a **template** for CI/CD deployment via FTP, and can be customized for various use cases.
+
