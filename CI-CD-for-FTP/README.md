@@ -31,6 +31,7 @@ variables:
   FTP_HOST: "$CI_FTP_HOST"
   FTP_USERNAME: "$CI_FTP_USERNAME"
   FTP_PASSWORD: "$CI_FTP_PASSWORD"
+```
 
 **Important:** Do not store passwords directly in `.gitlab-ci.yml`, use GitLab’s CI/CD secret variables like `$CI_FTP_PASSWORD`.
 
