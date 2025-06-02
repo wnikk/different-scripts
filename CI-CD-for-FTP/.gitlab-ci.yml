@@ -1,0 +1,173 @@
+stages:
+  - build
+  - test
+  - test-deploy
+  - prod-deploy
+  - prod-rollback
+
+workflow:
+  name: '$CI_COMMIT_REF_NAME:$CI_COMMIT_SHORT_SHA - $CI_COMMIT_TITLE'
+  rules:
+    - when: always
+
+# This is a make build stage for a GitLab CI/CD pipeline.
+build:
+  stage: build
+  tags:
+    - web
+  script:
+    - echo "Build $CI_COMMIT_BRANCH"
+    - cd $CI_PROJECT_DIR
+    - mkdir -p ./dist
+    - mv ./protected ./dist/protected
+    - mv ./public_html ./dist/public_html
+    - printf "$(TZ=Europe/Kyiv date '+%Y-%m-%d_%T_%Z')" > ./dist/public_html/ver.txt
+    - echo -n "::commit:${CI_COMMIT_SHORT_SHA}::${CI_COMMIT_TAG:-'no-tag'}" >> ./dist/public_html/ver.txt
+    - cat ./dist/public_html/ver.txt
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1h
+  after_script:
+    - echo "Finished build for branch ${CI_COMMIT_REF_SLUG}"
+
+# This check PHP syntax in a GitLab CI/CD pipeline.
+syntax_check:
+  stage: test
+  tags:
+    - web
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - ls -hal
+    - |
+      files=($(find . -type f -name "*.php" -not -path "./vendor/*" -not -path "./.git/*"))
+      total=${#files[@]}
+      echo "Found $total PHP files to check."
+      i=1
+      for file in "${files[@]}"; do
+        echo "[$i/$total] Checking $file"
+        php -l "$file" || exit 1
+        i=$((i+1))
+      done
+    - vendor/bin/phpunit tests
+
+# This is update build on production without creating a backup.
+prod-refresh:
+  stage: prod-deploy
+  tags:
+    - web
+  #  environment:
+  #    name: $PROD_DOMAIN
+  variables:
+    GIT_STRATEGY: none
+    FTP_HOST: $CI_FTP_HOST
+    FTP_USERNAME: $CI_FTP_USERNAME
+    FTP_PASSWORD: $CI_FTP_PASSWORD
+    FTP_COMMAND: "set ftp:ssl-allow no; open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST"
+  script:
+    - echo "Checking version before deployment..."
+    - OLD_VERSION=$(lftp -c "$FTP_COMMAND; cat public_html/ver.txt || echo '!empty version!'")
+    - NEW_VERSION=$(cat ./dist/public_html/ver.txt)
+    - DATE=$(TZ=Europe/Kyiv date '+%y%m%d_%H%M')
+    - echo "!!! Update $OLD_VERSION --> $NEW_VERSION"
+    - echo "Waiting 5 seconds before continuing... Press Ctrl+C to cancel." && sleep 5
+    - echo "Update files..."
+    - lftp -c "
+      $FTP_COMMAND;
+      mirror -Rnev ./dist/protected protected --parallel=10 --exclude-glob .git*;
+      mirror -Rnev ./dist/public_html public_html --parallel=10 --exclude-glob .git*;
+      bye
+      "
+  needs:
+    - build
+    - syntax_check
+  dependencies:
+    - build
+  only:
+    - main
+  when: manual
+
+# This is a production deployment stage for a GitLab CI/CD pipeline.
+prod-deploy:
+  stage: prod-deploy
+  tags:
+    - web
+  variables:
+    GIT_STRATEGY: none
+    FTP_HOST: $CI_FTP_HOST
+    FTP_USERNAME: $CI_FTP_USERNAME
+    FTP_PASSWORD: $CI_FTP_PASSWORD
+    FTP_COMMAND: "set ftp:ssl-allow no; open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST"
+  script:
+    - echo "Checking version before deployment..."
+    - OLD_VERSION=$(lftp -c "$FTP_COMMAND; cat public_html/ver.txt || echo '!empty version!'")
+    - NEW_VERSION=$(cat ./dist/public_html/ver.txt)
+    - DATE=$(TZ=Europe/Kyiv date '+%y%m%d_%H%M')
+    - echo "!!! Update $OLD_VERSION --> $NEW_VERSION"
+    - echo "Waiting 5 seconds before continuing... Press Ctrl+C to cancel." && sleep 5
+    - echo "Renaming previous backup..."
+    - lftp -c "$FTP_COMMAND; mv version_last version_last$DATE || echo 'No previous version_last to rename';ls version_last*;"
+    - echo "Uploading new files..."
+    - lftp -c "
+        $FTP_COMMAND;
+        mkdir -p version_new;
+        mirror -Rnev ./dist/protected version_new/protected --parallel=10 --exclude-glob .git*;
+        mirror -Rnev ./dist/public_html version_new/public_html --parallel=10 --exclude-glob .git*;
+        bye
+      "
+    - echo "Creating new backup..."
+    - lftp -c "
+        $FTP_COMMAND;
+        mkdir -p version_last;
+        mv protected version_last/;
+        mv public_html version_last/;
+        bye
+      "
+    - echo "Publishing new release version..."
+    - lftp -c "
+        $FTP_COMMAND;
+        mv version_new/protected protected;
+        mv version_new/public_html public_html;
+        rmdir version_new;
+        bye
+      "
+  needs:
+    - build
+    - syntax_check
+  dependencies:
+    - build
+  only:
+    - main
+  when: manual
+
+# This is a rollback stage for a GitLab CI/CD pipeline.
+prod-rollback:
+  stage: prod-rollback
+  tags:
+    - web
+  variables:
+    GIT_STRATEGY: none
+    FTP_HOST: $CI_FTP_HOST
+    FTP_USERNAME: $CI_FTP_USERNAME
+    FTP_PASSWORD: $CI_FTP_PASSWORD
+    FTP_COMMAND: "set ftp:ssl-allow no; open -u $FTP_USERNAME,$FTP_PASSWORD $FTP_HOST"
+  script:
+    - echo "Recovering to the previous release"
+    - CURRENT_VERSION=$(lftp -c "$FTP_COMMAND; cat public_html/ver.txt || echo 'Not found correct version!'")
+    - RESTORE_VERSION=$(lftp -c "$FTP_COMMAND; cat version_last/public_html/ver.txt || echo 'Not found restore version!'")
+    - echo "!!! Recovering from $CURRENT_VERSION --> $RESTORE_VERSION"
+    - echo "Waiting 5 seconds before continuing... Press Ctrl+C to cancel." && sleep 5
+    - lftp -c "
+        $FTP_COMMAND;
+        ls version_correct && rm -rf version_correct;
+        mkdir -p version_correct;
+        mv protected version_correct/ || echo 'No protected directory for backup correct';
+        mv public_html version_correct/ || echo 'No public_html directory for backup correct';
+        mv version_last/protected protected || echo 'No protected directory for restore';
+        mv version_last/public_html public_html || echo 'No public_html directory for restore';
+        bye
+      "
+  only:
+    - main
+  when: manual
