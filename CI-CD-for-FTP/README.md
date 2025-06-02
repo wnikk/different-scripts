@@ -4,6 +4,15 @@
 This `GitLab CI/CD` pipeline automates the deployment of web projects to a remote server via **FTP**.  
 It includes **build**, **testing**, **production deployment**, **automatic backups**, and **rollback capabilities**.
 
+## 📖 Template preparation
+This example assumes that the repository contains two directories:  
+- **`protected`** — for secure files that need controlled access.  
+- **`public_html`** — for all public-facing content.  
+
+The pipeline deploys everything inside these folders. However, for other projects, you can:
+- **Remove the second folder (`protected` or `public_html`)** if it's unnecessary.
+- **Move all files to the root directory** for direct deployment. Changing the paths in the file accordingly.
+
 ## 🚀 Features
 ✅ **Automated project build**  
 ✅ **PHP syntax validation before deployment**  
