@@ -14,7 +14,7 @@ workflow:
 build:
   stage: build
   tags:
-    - web
+    - ftp
   script:
     - echo "Build $CI_COMMIT_BRANCH"
     - cd $CI_PROJECT_DIR
@@ -35,7 +35,7 @@ build:
 syntax_check:
   stage: test
   tags:
-    - web
+    - ftp
   variables:
     GIT_STRATEGY: none
   script:
@@ -56,9 +56,7 @@ syntax_check:
 prod-refresh:
   stage: prod-deploy
   tags:
-    - web
-  #  environment:
-  #    name: $PROD_DOMAIN
+    - ftp
   variables:
     GIT_STRATEGY: none
     FTP_HOST: $CI_FTP_HOST
@@ -74,10 +72,10 @@ prod-refresh:
     - echo "Waiting 5 seconds before continuing... Press Ctrl+C to cancel." && sleep 5
     - echo "Update files..."
     - lftp -c "
-      $FTP_COMMAND;
-      mirror -Rnev ./dist/protected protected --parallel=10 --exclude-glob .git*;
-      mirror -Rnev ./dist/public_html public_html --parallel=10 --exclude-glob .git*;
-      bye
+        $FTP_COMMAND;
+        mirror -Rnev ./dist/protected protected --parallel=10 --exclude-glob .git*;
+        mirror -Rnev ./dist/public_html public_html --parallel=10 --exclude-glob .git*;
+        bye
       "
   needs:
     - build
@@ -92,7 +90,7 @@ prod-refresh:
 prod-deploy:
   stage: prod-deploy
   tags:
-    - web
+    - ftp
   variables:
     GIT_STRATEGY: none
     FTP_HOST: $CI_FTP_HOST
@@ -145,7 +143,7 @@ prod-deploy:
 prod-rollback:
   stage: prod-rollback
   tags:
-    - web
+    - ftp
   variables:
     GIT_STRATEGY: none
     FTP_HOST: $CI_FTP_HOST
